@@ -1,5 +1,8 @@
 #include <mpi.h>
 #include <stdio.h>
+//run
+//$HOME/opt/usr/local/bin/mpicc -o hello ./Desktop/PhD/mpi/main.c
+//$HOME/opt/usr/local/bin/mpirun -np 4 ./hello
 
 int main(int argc, char** argv) {
     MPI_Init(NULL, NULL);
@@ -12,7 +15,7 @@ int main(int argc, char** argv) {
     printf("Hello: rank %d, world: %d\n",rank, world);
     
     root = 0;
-    temp = 5;
+    temp = 89;
     if (rank == root) {
         for (i=1; i<world; i++){
             MPI_Send( &temp, 1, MPI_INTEGER, i, 0, MPI_COMM_WORLD);
