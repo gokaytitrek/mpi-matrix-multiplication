@@ -6,19 +6,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <unistd.h>
 
 // N>=16 is not working
-#define N   8      //matrix size
-#define P   4
+#define N   16      //matrix size
+#define BS  N/2     //block size
 
 MPI_Status status;
 void printMatrix (int matrix[N][N]);
 int main(int argc, char **argv)
 {
-    int nproc,taskId,source,dest,rows,offset,i,j,k;
+    int nproc,taskId,source,i,j,k,positionX,positionY;
+    
     MPI_Datatype type;
-    int result[P][P] = {0};
+    int result[BS][BS] = {0};
     int resultFinal[N][N] = {0};
     int a[N][N],b[N][N];
     
@@ -26,13 +26,12 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &taskId);
     MPI_Comm_size(MPI_COMM_WORLD, &nproc);
     
-    MPI_Type_vector(N, P, N, MPI_INT, &type);
+    MPI_Type_vector(N, BS, N, MPI_INT, &type);
     MPI_Type_commit(&type);
     
-//    printf("******************************************************************:\n");
     //root
     if (taskId == 0) {
-//        srand( time(NULL) );
+        srand( time(NULL) );
         //Generate two NxN matrix
         for (i=0; i<N; i++) {
             for (j=0; j<N; j++) {
@@ -48,146 +47,79 @@ int main(int argc, char **argv)
         printMatrix(b);
  
 //      First matrix first block
-        MPI_Send(&a[0][0], P*N, MPI_INT,0,0, MPI_COMM_WORLD);
-        MPI_Send(&a[0][0], P*N, MPI_INT,1,1, MPI_COMM_WORLD);
+        MPI_Send(&a[0][0], BS*N, MPI_INT,0,0, MPI_COMM_WORLD);
+        MPI_Send(&a[0][0], BS*N, MPI_INT,1,1, MPI_COMM_WORLD);
 
 //      First matrix second block
-        MPI_Send(&a[P][0], P*N, MPI_INT,2,2, MPI_COMM_WORLD);
-        MPI_Send(&a[P][0], P*N, MPI_INT,3,3, MPI_COMM_WORLD);
+        MPI_Send(&a[BS][0], BS*N, MPI_INT,2,2, MPI_COMM_WORLD);
+        MPI_Send(&a[BS][0], BS*N, MPI_INT,3,3, MPI_COMM_WORLD);
         
 //      Second matrix first block
         MPI_Send(&b[0][0], 1, type, 0, 0, MPI_COMM_WORLD);
         MPI_Send(&b[0][0], 1, type, 2, 2, MPI_COMM_WORLD);
 
 //      Second matrix second block
-        MPI_Send(&b[0][P], 1, type, 1, 1, MPI_COMM_WORLD);
-        MPI_Send(&b[0][P], 1, type, 3, 3, MPI_COMM_WORLD);
+        MPI_Send(&b[0][BS], 1, type, 1, 1, MPI_COMM_WORLD);
+        MPI_Send(&b[0][BS], 1, type, 3, 3, MPI_COMM_WORLD);
         
     }
     
     //workers
     source = 0;
 
-    MPI_Recv(&a, P*N, MPI_INT, source, taskId, MPI_COMM_WORLD, &status);
+    MPI_Recv(&a, BS*N, MPI_INT, source, taskId, MPI_COMM_WORLD, &status);
     MPI_Recv(&b, 1, type, source, taskId, MPI_COMM_WORLD, &status);
     
-//    printf ("Fist received array \n");
-//    for (i=0; i<2; i++) {
-//        for (j=0; j<4; j++)
-//            printf("%d \t", a[i][j]);
-//        printf (" Task id %d \n",taskId);
-//    }
-//
-//    printf ("Second received array \n");
-//    for (i=0; i<4; i++) {
-//        for (j=0; j<2; j++)
-//            printf("%d \t", b[i][j]);
-//         printf (" Task id %d \n",taskId);
-//    }
-
+    MPI_Type_free(&type);
+    
     //multiplication
-    for (k=0; k<P; k++)
-        for (i=0; i<P; i++) {
+    for (k=0; k<BS; k++)
+        for (i=0; i<BS; i++) {
             for (j=0; j<N; j++)
                 result[i][k] = result[i][k] + a[i][j] * b[j][k];
         }
     
-//    for (k=0; k<2; k++) {
-//        for (j=0; j<2; j++)
-//            printf("%d \t", result[k][j]);
-//        printf ("Task = %d multiplication result \n",taskId);
-//    }
+    //Send result to root
+    MPI_Send(&result[0][0], BS*BS, MPI_INT, 0, 4, MPI_COMM_WORLD);
 
-//    printf ("Send by Task id %d \n",taskId);
-    MPI_Send(&result[0][0], P*P, MPI_INT, 0, 4, MPI_COMM_WORLD);
-//
-//  root receives results
+    //root receives results
     if(taskId == 0)
     {
         for (i=0; i<nproc; i++)
         {
             source = i;
-            if(i == 0)
+            MPI_Recv(&result, BS*BS, MPI_INT, source, 4, MPI_COMM_WORLD, &status);
+            //Manage shifting
+            if(source == 0)
             {
-                MPI_Recv(&result, P*P, MPI_INT, source, 4, MPI_COMM_WORLD, &status);
-                
-                for(k = 0; k<P; k++)
-                    for (j= 0; j<P; j++)
-                        resultFinal[k][j] = result[k][j];
-                
+                positionX = 0;
+                positionY = 0;
             }
-            else if(i == 1)
+            else if(source == 1)
             {
-                MPI_Recv(&result, P*P, MPI_INT, source, 4, MPI_COMM_WORLD, &status);
-                for(k = 0; k<P; k++)
-                    for (j= 0; j<P; j++)
-                        resultFinal[k][j+P] = result[k][j];
+                positionX = 0;
+                positionY = BS;
             }
-            else if(i == 2)
+            else if(source == 2)
             {
-                MPI_Recv(&result, P*P, MPI_INT, source, 4, MPI_COMM_WORLD, &status);
-                for(k = 0; k<P; k++)
-                    for (j= 0; j<P; j++)
-                        resultFinal[k+P][j] = result[k][j];
+                positionX = BS;
+                positionY = 0;
             }
-            else if(i == 3)
+            else if(source == 3)
             {
-                MPI_Recv(&result, P*P, MPI_INT, source, 4, MPI_COMM_WORLD, &status);
-                for(k = 0; k<P; k++)
-                    for (j= 0; j<P; j++)
-                        resultFinal[k+P][j+P] = result[k][j];
+                positionX = BS;
+                positionY = BS;
             }
-//            else if(i == 3)
-//                MPI_Recv(&resultFinal[2][2], 2*2, MPI_INT, source, 4, MPI_COMM_WORLD, &status);
             
-            
-//            if(i == 0)
-//            {
-//                MPI_Recv(&result, 2*2, MPI_INT, source, 4, MPI_COMM_WORLD, &status);
-//                for (k=0; k<2; k++) {
-//                    for (j=0; j<2; j++)
-//                        printf("%d \t", result[k][j]);
-//                    printf ("Result nproc id %d \n",i);
-//                }
-//            }
-//            else if(i == 1)
-//            {
-//                MPI_Recv(&result, 2*2, MPI_INT, source, 4, MPI_COMM_WORLD, &status);
-//                for (k=0; k<2; k++) {
-//                    for (j=0; j<2; j++)
-//                        printf("%d \t", result[k][j]);
-//                    printf ("Result nproc id %d \n",i);
-//                }
-//            }
-//            else if(i == 2)
-//            {
-//                MPI_Recv(&result, 2*2, MPI_INT, source, 4, MPI_COMM_WORLD, &status);
-//                for (k=0; k<2; k++) {
-//                    for (j=0; j<2; j++)
-//                        printf("%d \t", result[k][j]);
-//                    printf ("Result nproc id %d \n",i);
-//                }
-//            }
-//            else if(i == 3)
-//            {
-//                MPI_Recv(&result, 2*2, MPI_INT, source, 4, MPI_COMM_WORLD, &status);
-//                for (k=0; k<2; k++) {
-//                    for (j=0; j<2; j++)
-//                        printf("%d \t", result[k][j]);
-//                    printf ("Result nproc id %d \n",i);
-//                }
-//            }
-//
-            
-
+            for(k = 0; k<BS; k++)
+                for (j= 0; j<BS; j++)
+                    resultFinal[k+positionX][j+positionY] = result[k][j];
         }
 
-        for (k=0; k<N; k++) {
-            for (j=0; j<N; j++)
-                printf("%d \t", resultFinal[k][j]);
-            printf ("\n");
-        }
+        printf("Result matrix:\n");
+        printMatrix(resultFinal);
     }
+
     MPI_Finalize();
 }
 
