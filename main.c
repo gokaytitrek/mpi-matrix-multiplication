@@ -1,4 +1,4 @@
-//run
+//build&run
 //$HOME/opt/usr/local/bin/mpicc -o main ./Desktop/mpi/main.c
 //$HOME/opt/usr/local/bin/mpirun -np 4 ./main
 
@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-// N>=16 is not working
 #define N   16      //matrix size
 #define BS  N/2     //block size
 
